@@ -3,6 +3,8 @@
 A CLI interface to a remote salt-api instance
 
 '''
+from __future__ import print_function
+import sys
 import json
 import logging
 import optparse
@@ -171,28 +173,28 @@ def get_login_details(opts):
     for key, value in results.items():
         results[key] = os.environ.get(key, results[key])
 
-    # get eauth prompt options
     if opts.saltapiurl:
         results['SALTAPI_URL'] = opts.saltapiurl
 
+    # get eauth prompt options
     if opts.eauth:
         results['SALTAPI_EAUTH'] = opts.eauth
-        if opts.username == None:
-          if opts.interactive:
-            results['SALTAPI_USER'] = raw_input('Username: ')
-          else:
-            logger.error("SALTAPI_USER required")
-            raise SystemExit(1)
-        else:
-          results['SALTAPI_USER'] = opts.username
-        if opts.password == None:
-          if opts.interactive:
-            results['SALTAPI_PASS'] = getpass.getpass(prompt='Password: ')
-          else:
-            logger.error("SALTAPI_PASS required")
-            raise SystemExit(1)
-        else:
-          results['SALTAPI_PASS'] = opts.password
+    if opts.username == None:
+      if opts.interactive:
+        results['SALTAPI_USER'] = raw_input('eauth(' + results['SALTAPI_EAUTH'] + ') Username: ')
+      else:
+        logger.error("SALTAPI_USER required")
+        raise SystemExit(1)
+    else:
+      results['SALTAPI_USER'] = opts.username
+    if opts.password == None:
+      if opts.interactive:
+        results['SALTAPI_PASS'] = getpass.getpass(prompt='eauth(' + results['SALTAPI_EAUTH'] + ') Password: ')
+      else:
+        logger.error("SALTAPI_PASS required")
+        raise SystemExit(1)
+    else:
+      results['SALTAPI_PASS'] = opts.password
 
     return results
 
@@ -247,8 +249,25 @@ def main():
 
     api = pepper.Pepper(salturl, debug_http=opts.debug_http)
     auth = api.login(saltuser, saltpass, salteauth)
+    try:
+      authToken = auth['token']
+    except Exception as e:
+      print('[ERROR] Unable to get authorization from salt-api: ' + str(auth),file=sys.stderr)
+      return (1,json.dumps({}))
     nodesJidRet = api.local_async(tgt=tgt, fun='test.ping', expr_form=opts.expr_form)
-    nodesJid = nodesJidRet['return'][0]['jid']
+    try:
+      nodesJidRetValue = nodesJidRet['return'][0]
+    except Exception as e:
+      print('[ERROR] Unexpected output from salt-api, no return data: ' + str(nodesJidRet),file=sys.stderr)
+      return (1,json.dumps({}))
+    if type(nodesJidRet['return'][0]) == type('') or type(nodesJidRet['return'][0]) == type(u''):
+      print('[ERROR] ' + str(nodesJidRet['return']),file=sys.stderr)
+      return (1,json.dumps({}))
+    try:
+      nodesJid = nodesJidRet['return'][0]['jid']
+    except Exception as e:
+      print('[ERROR] Unable to determine jid ' + str(nodesJidRet['return'][0]) + ", " + str(e),file=sys.stderr)
+      return (1,json.dumps({}))
     time.sleep(seconds_to_wait)
     nodesRet = api.lookup_jid(nodesJid)
     if fun == 'test.ping':
